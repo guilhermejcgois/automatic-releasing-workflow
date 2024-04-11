@@ -1,0 +1,168 @@
+name: Hotfix Release Workflow
+
+on:
+    push:
+        branches:
+            - 'hotfix/*'
+
+jobs:
+    check-pr:
+        runs-on: ubuntu-latest
+        outputs:
+            pr_count: ${{ steps.check.outputs.pr_count }}
+        if: startsWith(github.ref, 'refs/heads/hotfix/')
+        steps:
+            - name: Check out code
+              uses: actions/checkout@v2
+
+            - name: Check for PR
+              id: check
+              run: |
+                  PR_COUNT="$(gh pr list --json id --jq length --head ${GITHUB_REF_NAME})"
+                  echo "pr_count=$PR_COUNT" >> $GITHUB_OUTPUT
+
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    create-git-tag:
+        runs-on: ubuntu-latest
+        outputs:
+            tag_name: auto${{ steps.branch_name.outputs.branch }}
+        needs: check-pr
+        if: needs.check-pr.outputs.pr_count == 0
+        steps:
+            - name: Check out code
+              uses: actions/checkout@v2
+
+            - name: Configure git
+              run: |
+                  git config --global user.email "action@github.com"
+                  git config --global user.name "GitHub Action"
+
+            - name: Get branch name
+              id: branch_name
+              run: echo "branch=\"$(git branch --show-current)\"" >>$GITHUB_OUTPUT
+
+            - name: Create Git Tag
+              run: git tag auto${{ steps.branch_name.outputs.branch }}
+              if: startsWith(github.ref, 'refs/heads/')
+
+            - name: Push Git Tag
+              run: git push origin auto${{ steps.branch_name.outputs.branch }}
+              if: startsWith(github.ref, 'refs/heads/')
+
+    create-github-release:
+        runs-on: ubuntu-latest
+        needs: create-git-tag
+        steps:
+            - name: Check out code
+              uses: actions/checkout@v2
+
+            - name: Create GitHub Release
+              run: |
+                  gh release create ${{ needs.create-git-tag.outputs.tag_name }} \
+                    --title "Hotfix ${{ needs.create-git-tag.outputs.tag_name }}" \
+                    --prerelease --generate-notes
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    create-pull-request:
+        runs-on: ubuntu-latest
+        needs: create-github-release
+        steps:
+            - name: Check out code
+              uses: actions/checkout@v2
+
+            - name: Create Pull Request
+              run: |
+                  BRANCH_NAME="$(git branch --show-current | awk 'BEGIN{FS=OFS="/"}{print $2}')"
+                  PR_TITLE="Hotfix $BRANCH_NAME"
+                  PR_BODY="Automatically created PR for the new branch "$BRANCH_NAME"."
+
+                  echo "Creating PR for branch \"$BRANCH_NAME\"..."
+                  gh pr create --head "hotfix/$BRANCH_NAME" --base main --title "$PR_TITLE" --body "$PR_BODY" --label hotfix  --label ignore-for-release
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    create-sync-pull-request:
+        runs-on: ubuntu-latest
+        needs: create-pull-request
+        steps:
+            - name: Check out code
+              uses: actions/checkout@v2
+
+            - name: Create Pull Request
+              run: |
+                  BRANCH_NAME="$(git branch --show-current | awk 'BEGIN{FS=OFS="/"}{print $2}')"
+                  PR_TITLE="Sync Hotfix $BRANCH_NAME"
+                  PR_BODY="Automatically created PR for the new branch \"$BRANCH_NAME\"."
+
+                  echo "Creating PR for branch \"$BRANCH_NAME\"..."
+                  gh pr create --head "hotfix/$BRANCH_NAME" --base dev --title "$PR_TITLE" --body "$PR_BODY" --label sync-hotfix  --label ignore-for-release
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    update-git-tag:
+        runs-on: ubuntu-latest
+        outputs:
+            tag_name: auto${{ steps.branch_name.outputs.branch }}
+        needs: check-pr
+        if: needs.check-pr.outputs.pr_count > 0
+        steps:
+            - name: Check out code
+              uses: actions/checkout@v2
+
+            - name: Configure git
+              run: |
+                  git config --global user.email "action@github.com"
+                  git config --global user.name "GitHub Action"
+
+            - name: Get branch name
+              id: branch_name
+              run: echo "branch=\"$(echo ${GITHUB_REF#refs/heads/})\"" >>$GITHUB_OUTPUT
+
+            - name: Update Git Tag
+              run: git tag -f auto${{ steps.branch_name.outputs.branch }}
+              if: startsWith(github.ref, 'refs/heads/')
+
+            - name: Push Git Tag
+              run: git push --force origin auto${{ steps.branch_name.outputs.branch }}
+              if: startsWith(github.ref, 'refs/heads/')
+
+    update-github-release:
+        runs-on: ubuntu-latest
+        needs: update-git-tag
+        steps:
+            - name: Check out code
+              uses: actions/checkout@v2
+
+            - name: Update GitHub Release
+              run: |
+                  # Delete a GitHub release
+                  gh release delete ${{ needs.update-git-tag.outputs.tag_name }} --yes
+
+                  # Re-create a GitHub release to update generated notes
+                  gh release create ${{ needs.update-git-tag.outputs.tag_name }} \
+                    --title "Hotfix ${{ needs.update-git-tag.outputs.tag_name }}" \
+                    --prerelease --generate-notes
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    publish-release:
+        runs-on: ubuntu-latest
+        if: github.event_name == 'pull_request'
+        steps:
+            - name: Check out code
+              uses: actions/checkout@v2
+
+            - name: Merge Sync PR
+              run: gh pr merge ${HEAD_REF} --merge || echo 'No sync PR available to merge.'
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  HEAD_REF: ${{ github.head_ref }}
+
+            - name: Publish GH Release
+              run: gh release edit auto"${HEAD_REF}" --prerelease=false --latest
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  HEAD_REF: ${{ github.head_ref }}
