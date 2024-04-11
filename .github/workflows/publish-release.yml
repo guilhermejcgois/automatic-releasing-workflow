@@ -1,0 +1,27 @@
+name: Release Workflow
+
+on:
+    pull_request:
+        branches:
+            - 'main'
+        types:
+            - closed
+
+jobs:
+    publish-release:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Check out code
+              uses: actions/checkout@v2
+
+            - name: Merge Sync PR
+              run: gh pr merge ${HEAD_REF} --merge || echo 'No sync PR available to merge.'
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  HEAD_REF: ${{ github.head_ref }}
+
+            - name: Publish GH Release
+              run: gh release edit auto"${HEAD_REF}" --prerelease=false --latest
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  HEAD_REF: ${{ github.head_ref }}
