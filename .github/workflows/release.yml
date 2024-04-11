@@ -3,7 +3,7 @@ name: Release Workflow
 on:
     pull_request:
         branches:
-            - 'release/*'
+            - 'main'
         types:
             - closed
     push:
@@ -85,7 +85,7 @@ jobs:
                   PR_BODY="Automatically created PR for the new branch "$BRANCH_NAME"."
 
                   echo "Creating PR for branch \"$BRANCH_NAME\"..."
-                  gh pr create --base main --title "$PR_TITLE" --body "$PR_BODY" --label release ignore-for-release
+                  gh pr create --head "release/$BRANCH_NAME" --base main --title "$PR_TITLE" --body "$PR_BODY" --label release  --label ignore-for-release
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -104,7 +104,7 @@ jobs:
                   PR_BODY="Automatically created PR for the new branch \"$BRANCH_NAME\"."
 
                   echo "Creating PR for branch \"$BRANCH_NAME\"..."
-                  gh pr create --base dev --title "$PR_TITLE" --body "$PR_BODY" --label sync-release ignore-for-release
+                  gh pr create --head "release/$BRANCH_NAME" --base dev --title "$PR_TITLE" --body "$PR_BODY" --label sync-release  --label ignore-for-release
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -154,3 +154,20 @@ jobs:
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+    publish-release:
+        runs-on: ubuntu-latest
+        if: github.event_name == 'pull_request'
+        steps:
+            - name: Check out code
+              uses: actions/checkout@v2
+
+            - name: Publish GH Release
+              run: gh release edit auto"${HEAD_REF}" --latest
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  HEAD_REF: ${{ github.head_ref }}
+
+            - name: Merge Sync PR
+              run: gh pr merge || echo 'No sync PR available to merge.'
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
