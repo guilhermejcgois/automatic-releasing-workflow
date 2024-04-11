@@ -161,13 +161,13 @@ jobs:
             - name: Check out code
               uses: actions/checkout@v2
 
-            - name: Publish GH Release
-              run: gh release edit auto"${HEAD_REF}" --latest
-              env:
-                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-                  HEAD_REF: ${{ github.head_ref }}
-
             - name: Merge Sync PR
               run: gh pr merge || echo 'No sync PR available to merge.'
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Publish GH Release
+              run: gh release edit auto"${HEAD_REF}" --prerelease=false --latest
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  HEAD_REF: ${{ github.head_ref }}
