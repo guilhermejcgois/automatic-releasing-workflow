@@ -162,7 +162,7 @@ jobs:
               uses: actions/checkout@v2
 
             - name: Merge Sync PR
-              run: gh pr merge "${HEAD_REF}" || echo 'No sync PR available to merge.'
+              run: gh pr merge ${HEAD_REF} --merge || echo 'No sync PR available to merge.'
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   HEAD_REF: ${{ github.head_ref }}
